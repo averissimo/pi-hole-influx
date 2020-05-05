@@ -1,9 +1,7 @@
 #! /usr/bin/env python3
-
+import json
 import requests
 from time import sleep, localtime, strftime
-from influxdb import InfluxDBClient
-import sdnotify
 import sys
 import logging
 
@@ -11,13 +9,11 @@ from dynaconf import LazySettings, Validator
 from dynaconf.utils.boxing import DynaBox
 
 settings = LazySettings(
-    SETTINGS_FILE_FOR_DYNACONF="default.toml,user.toml",
+    SETTINGS_FILE_FOR_DYNACONF="etc/default.toml,etc/user.toml",
     ENVVAR_PREFIX_FOR_DYNACONF="PIHOLE",
 )
 settings.validators.register(Validator("INSTANCES", must_exist=True))
 settings.validators.validate()
-
-n = sdnotify.SystemdNotifier()
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +26,7 @@ class Pihole:
         self.url = url
         self.timeout = settings.as_int("REQUEST_TIMEOUT")
         self.logger = logging.getLogger("pihole." + name)
-        self.logger.info("Initialized for %s (%s)", name, url)
+        # self.logger.info("Initialized for %s (%s)", name, url)
 
     def get_data(self):
         """Retrieve API data from Pi-hole, and return as dict on success."""
@@ -45,17 +41,7 @@ class Pihole:
 
 
 class Daemon(object):
-    def __init__(self, single_run=False):
-        self.influx = InfluxDBClient(
-            host=settings.INFLUXDB_HOST,
-            port=settings.as_int("INFLUXDB_PORT"),
-            username=settings.get("INFLUXDB_USERNAME"),
-            password=settings.get("INFLUXDB_PASSWORD"),
-            database=settings.INFLUXDB_DATABASE,
-            ssl=settings.as_bool("INFLUXDB_SSL"),
-            verify_ssl=settings.as_bool("INFLUXDB_VERIFY_SSL"),
-        )
-        self.single_run = single_run
+    def __init__(self):
 
         if isinstance(settings.INSTANCES, DynaBox):
             self.piholes = [
@@ -75,19 +61,9 @@ class Daemon(object):
             raise ValueError("Unable to parse instances definition(s).")
 
     def run(self):
-        logger.info("Running daemon, reporting to InfluxDB at %s.", self.influx._host)
-        while True:
-            for pi in self.piholes:
-                data = pi.get_data()
-                self.send_msg(data, pi.name)
-            timestamp = strftime("%Y-%m-%d %H:%M:%S %z", localtime())
-
-            n.notify("STATUS=Last report to InfluxDB at {}".format(timestamp))
-            n.notify("READY=1")
-            if self.single_run:
-                logger.info("Finished single run.")
-                break
-            sleep(settings.as_int("REPORTING_INTERVAL"))  # pragma: no cover
+        for pi in self.piholes:
+            data = pi.get_data()
+            self.send_msg(data, pi.name)
 
     def send_msg(self, resp, name):
         if "gravity_last_updated" in resp:
@@ -98,17 +74,18 @@ class Daemon(object):
 
         json_body = [{"measurement": "pihole", "tags": {"host": name}, "fields": resp}]
 
-        self.influx.write_points(json_body)
+        print(json.dumps(json_body))
 
 
-def main(single_run=False):
+
+def main(single_run=True):
     log_level = (settings.LOG_LEVEL).upper()
     logging.basicConfig(
         level=getattr(logging, log_level),
         format="%(levelname)s: [%(name)s] %(message)s",
     )
 
-    daemon = Daemon(single_run)
+    daemon = Daemon()
 
     try:
         daemon.run()
@@ -120,4 +97,4 @@ def main(single_run=False):
 
 
 if __name__ == "__main__":
-    main()
+    main(True)

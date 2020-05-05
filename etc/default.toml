@@ -3,7 +3,7 @@ log_level = "info"
 
 influxdb_host = "127.0.0.1"
 influxdb_port = "8086"
-influxdb_database = "pihole"
+influxdb_database = "telegraf"
 influxdb_ssl = "False"
 influxdb_verify_ssl = "True"
 
