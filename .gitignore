@@ -132,3 +132,8 @@ dmypy.json
 .vscode
 config.ini
 user.toml
+
+bin/
+include/
+
+.*.swp
